@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: cliprush-ai
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CLIPRUSH_AUTH_USERNAME
+        sync: false
+      - key: CLIPRUSH_AUTH_PASSWORD
+        sync: false
+      - key: CLIPRUSH_MAX_UPLOAD_MB
+        value: "500"
+      - key: CLIPRUSH_DATA_DIR
+        value: /tmp/cliprush-data
+      - key: GROQ_CHAT_MODEL
+        value: openai/gpt-oss-120b
+      - key: GROQ_STT_MODEL
+        value: whisper-large-v3-turbo

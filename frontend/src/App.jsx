@@ -7,7 +7,7 @@ import {
   Sparkles, Upload, Video, WandSparkles, X, Youtube, Zap
 } from "lucide-react";
 
-const API = (import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000").replace(/\/$/, "");
+const API = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 
 function formatTime(seconds = 0) {
   const s = Math.max(0, Math.floor(seconds));

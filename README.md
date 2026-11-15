@@ -1,196 +1,109 @@
-# ClipRush AI — Phase 1 MVP
+# ClipRush AI
 
-Local-first video highlight detection and clip export API.
+A password-protected, single-instance deployment of the ClipRush AI video clipping MVP. The React/Vite interface and FastAPI backend are served from one origin; Groq handles speech transcription and highlight selection; FFmpeg renders the final clips.
 
-## What works
+## Features
 
-- Upload MP4, MOV, MKV, WebM and AVI videos
-- Inspect public YouTube URL metadata and show a privacy-enhanced preview (no media downloading)
-- Probe video metadata with FFprobe
-- Detect high-energy audio windows
-- Detect approximate visual scene changes
-- Rank and select candidate moments
-- Export vertical 9:16, square 1:1 or landscape 16:9 MP4 clips
+- Upload MP4, MOV, MKV, WebM, AVI and M4V video files
+- Inspect supported public video URLs and import sources when the provider permits access
+- Transcribe audio with Groq Whisper (`whisper-large-v3-turbo` by default)
+- Select candidate highlights with Groq (`openai/gpt-oss-120b` by default)
+- Render captioned 9:16, 1:1 and 16:9 MP4 clips with FFmpeg
+- React dashboard served by FastAPI from the same origin
+- HTTP Basic Authentication for the dashboard, API, documentation and generated clips
 
-**Honest limitation:** Phase 1 uses signal-based candidate detection. It does not understand semantic meaning, identify specific GTA events, or guarantee viral clips. Speech transcription, semantic ranking, user accounts, cloud jobs and payments are later phases.
+Only process videos you own or have permission to use. Source URL imports are best-effort and do not bypass logins, DRM, paywalls, or provider restrictions.
 
-## Requirements
+## Deploy to Render
 
-- Python 3.11 recommended
-- FFmpeg + FFprobe installed and available in PATH
-- Windows, macOS or Linux
-- Internet is not required after Python dependencies are installed
+1. Push this repository to GitHub.
+2. In Render, choose **New → Blueprint** and select this repository. Render reads `render.yaml` and builds the Docker image.
+3. In the service's Environment settings, set these secret values:
+   - `GROQ_API_KEY`: create a key in the Groq Console.
+   - `CLIPRUSH_AUTH_USERNAME`: choose a private username.
+   - `CLIPRUSH_AUTH_PASSWORD`: set a long, unique password (at least 24 random characters recommended).
+4. Deploy. Open the service URL; the browser will request the Basic Auth username and password.
+5. Check `/health` for service health. The endpoint intentionally does not reveal secrets.
 
-## Install FFmpeg on Windows
+Do not commit `.env` or put the Groq key in a `VITE_*` variable. The API key belongs only in the Render backend environment.
 
-1. Download an FFmpeg build from https://www.gyan.dev/ffmpeg/builds/
-2. Extract it, for example to `C:\ffmpeg`
-3. Add `C:\ffmpeg\bin` to your Windows PATH
-4. Open a **new** terminal and verify:
+### Render free-plan limitations
 
-```powershell
-ffmpeg -version
-ffprobe -version
-```
+The supplied Blueprint uses Render's free web-service plan to keep initial hosting cost at zero. Free instances can sleep and their local filesystem is ephemeral. Uploaded videos, generated clips, in-memory job state and video records can be lost when the service restarts, redeploys or sleeps. The app is therefore suitable for a protected demo/test deployment, not durable production storage. For reliable production use, add a persistent disk or object storage, a database and a durable background worker; these may incur charges.
 
-## Setup on Windows PowerShell
+The app currently uses one shared Basic Auth login, one process-local registry and in-process background tasks. It is not a multi-user SaaS: users sharing the login also share the same service instance and its files. Do not distribute the shared credentials publicly. For public launch, implement individual accounts, per-user authorization, rate limits/quotas, durable job processing, persistent storage, monitoring and abuse controls first.
 
-```powershell
-cd cliprush-ai-phase1
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
+## Local development
+
+### Requirements
+
+- Python 3.11+
+- Node.js 20+
+- FFmpeg and FFprobe on `PATH`
+- A Groq API key for clip generation
+
+### Backend
+
+```bash
+python -m venv .venv
+# Windows: .venv\\Scripts\\activate
+# macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+cp .env.example .env
+uvicorn app.main:app --reload --port 8000
 ```
 
-If PowerShell blocks activation, run:
+Set `GROQ_API_KEY`, `CLIPRUSH_AUTH_USERNAME` and `CLIPRUSH_AUTH_PASSWORD` in `.env`. The frontend dev server runs on a different origin, so local browser calls to the protected backend may trigger the browser's Basic Auth prompt.
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
+### Frontend
 
-Open API docs at http://127.0.0.1:8000/docs
-
-## Test the API
-
-### 1. Health check
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-```
-
-### 2. Upload a video
-
-```powershell
-$upload = Invoke-RestMethod -Method Post `
-  -Uri http://127.0.0.1:8000/api/videos `
-  -Form @{ file = Get-Item "C:\Videos\sample.mp4" }
-
-$upload
-```
-
-Copy the returned `id`.
-
-### 3. Analyze and export clips
-
-```powershell
-$body = @{
-  clip_count = 5
-  min_duration = 15
-  max_duration = 45
-  aspect_ratio = "9:16"
-  content_type = "hybrid"
-} | ConvertTo-Json
-
-$result = Invoke-RestMethod -Method Post `
-  -Uri "http://127.0.0.1:8000/api/videos/$($upload.id)/analyze" `
-  -ContentType "application/json" `
-  -Body $body
-
-$result.clips
-```
-
-Open a returned clip URL in your browser, for example:
-
-`http://127.0.0.1:8000/clips/RETURNED_FILENAME.mp4`
-
-### 4. Delete source and generated clips
-
-```powershell
-Invoke-RestMethod -Method Delete `
-  -Uri "http://127.0.0.1:8000/api/videos/$($upload.id)"
-```
-
-## YouTube URL support (metadata + preview only)
-
-ClipRush can validate common YouTube video URL formats and retrieve public metadata through YouTube's oEmbed endpoint. This feature does **not** download YouTube video/audio. A public URL alone does not grant permission to copy or process the underlying video.
-
-### Inspect a YouTube URL
-
-```powershell
-$payload = @{ url = "https://www.youtube.com/watch?v=VIDEO_ID" } | ConvertTo-Json
-$youtube = Invoke-RestMethod -Method Post `
-  -Uri http://127.0.0.1:8000/api/youtube/inspect `
-  -ContentType "application/json" -Body $payload
-
-$youtube
-```
-
-The response includes title, channel, thumbnail, embed URL and `processing_status: authorized_source_required`.
-
-To create clips, obtain the source file from the creator or another source you are authorized to process, then upload it through `POST /api/videos` and use the existing analyze endpoint. Do not use third-party downloaders or bypass YouTube restrictions.
-
-## API endpoints
-
-| Method | Endpoint | Purpose |
-|---|---|---|
-| GET | `/health` | Health check |
-| POST | `/api/youtube/inspect` | Validate YouTube URL and fetch public metadata only |
-| POST | `/api/videos` | Upload |
-| GET | `/api/videos` | List current-process uploads |
-| POST | `/api/videos/{id}/analyze` | Detect and render clips |
-| DELETE | `/api/videos/{id}` | Delete source and clips |
-| GET | `/clips/{filename}` | Serve generated clip |
-
-## Notes
-
-- Uploaded files and clips are stored in `data/`.
-- The current in-memory video registry resets when the server restarts. Re-upload videos after restart.
-- Processing is synchronous in this MVP. Do not expose this development server publicly.
-- The default upload cap is 1 GB. Change `CLIPRUSH_MAX_UPLOAD_MB` to adjust it.
-- The first render of a long video may take time.
-- 9:16 output uses center cropping. Face tracking and intelligent subject reframing are not included yet.
-- Only process content you own or have permission to use.
-
-
-# ClipRush AI Full Stack — React dashboard
-
-## Run backend
-
-From the project root:
-
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-## Run frontend
-
-Open a second PowerShell terminal:
-
-```powershell
+```bash
 cd frontend
 npm install
-Copy-Item .env.example .env
+cp .env.example .env
 npm run dev
 ```
 
-Open http://localhost:5173
+For local Vite development, set `VITE_API_BASE=http://127.0.0.1:8000` in `frontend/.env`. In the Docker deployment this variable is empty and the UI uses the same origin.
 
-The frontend calls the backend at `http://127.0.0.1:8000` by default. Change `VITE_API_BASE` in `frontend/.env` if needed, then restart Vite.
+## Environment variables
 
-## Frontend functionality
+| Variable | Required | Purpose |
+|---|---:|---|
+| `GROQ_API_KEY` | Yes for AI generation | Secret Groq API key |
+| `CLIPRUSH_AUTH_USERNAME` | Yes for all routes except health | Shared dashboard/API login |
+| `CLIPRUSH_AUTH_PASSWORD` | Yes for all routes except health | Shared dashboard/API password |
+| `GROQ_CHAT_MODEL` | No | Defaults to `openai/gpt-oss-120b` |
+| `GROQ_STT_MODEL` | No | Defaults to `whisper-large-v3-turbo` |
+| `CLIPRUSH_MAX_UPLOAD_MB` | No | Defaults to 1024 locally; Blueprint sets 500 |
+| `CLIPRUSH_DATA_DIR` | No | Writable upload/output directory |
+| `PORT` | No | Render supplies this; Docker defaults to 10000 |
 
-- Dashboard overview and current-session stats
-- Direct video upload to `POST /api/videos`
-- YouTube URL metadata inspection through `POST /api/youtube/inspect`
-- Explicit authorized-source upload workflow (does not download YouTube media)
-- Clip preferences and generation through `POST /api/videos/{id}/analyze`
-- Preview and download generated MP4 clips
-- API status indicator and readable errors
+## API
 
-## Current MVP limitations
+- `GET /health` — unauthenticated health check
+- `POST /api/videos` — upload a video
+- `GET /api/videos` — list videos in the current process
+- `POST /api/videos/{video_id}/analyze` — start clip generation
+- `GET /api/jobs/{job_id}` — inspect in-process job status
+- `DELETE /api/videos/{video_id}` — delete source and generated clips
+- `POST /api/sources/inspect` — inspect a supported source URL
+- `POST /api/sources/download` — best-effort import where permitted
+- `GET /clips/{filename}` — serve generated clips (authentication required)
 
-- No login, billing, cloud storage, persistent database, background job queue or multi-user isolation.
-- Video registry is in memory and resets on backend restart; upload again after restarting.
-- Processing is synchronous and intended for local testing only.
-- Do not expose this development server to the public internet.
+## Current limitations
+
+- No individual user accounts, billing, persistent database, object storage or durable queue.
+- Jobs and video metadata live in process memory; restart loses the registry.
+- Render free filesystem is ephemeral; files are not durable.
+- The shared Basic Auth gate is for a private demo, not a public multi-tenant product.
+- Clip selection quality depends on speech/transcript quality and model output; results are not guaranteed to be viral or factually perfect.
+- Center crop is used for vertical output; face tracking and intelligent subject reframing are not included.
 
 ## Troubleshooting
 
-- **Groq `invalid_media_file` (400):** ClipRush extracts mono 16 kHz PCM WAV chunks and validates each chunk with FFprobe before upload. If this persists, verify FFmpeg/FFprobe are installed and re-encode the source video to MP4 with AAC audio.
-- **Source download HTTP 403:** This is a platform/CDN refusal, not a Groq error. Update yt-dlp with `py -m pip install -U yt-dlp`, retry later, or upload a video file directly. Some URLs remain unavailable; ClipRush does not bypass access controls.
+- **401 / browser login:** enter the Render environment username/password configured for `CLIPRUSH_AUTH_USERNAME` and `CLIPRUSH_AUTH_PASSWORD`.
+- **503 deployment credentials not configured:** set both auth variables and redeploy.
+- **Groq key missing:** set `GROQ_API_KEY` in the service's secret environment variables.
+- **FFmpeg not found:** the Docker image installs FFmpeg and FFprobe; local development must install them separately.
+- **Files disappear after restart:** expected on the free ephemeral filesystem. Use persistent storage/object storage for durable use.

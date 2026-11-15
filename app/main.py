@@ -1,10 +1,15 @@
 from pathlib import Path
 from uuid import uuid4
 import os
+import base64
+import binascii
+import secrets
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import UPLOAD_DIR, OUTPUT_DIR, MAX_UPLOAD_MB, ALLOWED_EXTENSIONS
 from .schemas import AnalyzeRequest, YouTubeInspectRequest
@@ -13,7 +18,32 @@ from .video_utils import probe_video, audio_energy_events, scene_change_events, 
 from .downloader import inspect_url, download_video
 from .groq_ai import transcribe_video, select_highlights
 
-app = FastAPI(title="ClipRush AI API", description="Groq-powered AI video clipping studio", version="0.3.0")
+app = FastAPI(title="ClipRush AI", description="Password-protected Groq-powered video clipping studio", version="1.0.0")
+
+class SharedAccessMiddleware(BaseHTTPMiddleware):
+    """Single-owner staging gate. Use a unique username/password in deployment secrets."""
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/health":
+            return await call_next(request)
+        username = os.getenv("CLIPRUSH_AUTH_USERNAME", "").strip()
+        password = os.getenv("CLIPRUSH_AUTH_PASSWORD", "")
+        if not username or not password:
+            return JSONResponse({"detail": "Deployment access credentials are not configured."}, status_code=503)
+        header = request.headers.get("authorization", "")
+        try:
+            scheme, encoded = header.split(" ", 1)
+            if scheme.lower() != "basic": raise ValueError("Unsupported auth scheme")
+            supplied = base64.b64decode(encoded, validate=True).decode("utf-8")
+            supplied_user, supplied_password = supplied.split(":", 1)
+        except (ValueError, UnicodeDecodeError, binascii.Error):
+            supplied_user, supplied_password = "", ""
+        valid = secrets.compare_digest(supplied_user, username) and secrets.compare_digest(supplied_password, password)
+        if not valid:
+            return JSONResponse({"detail": "Authentication required."}, status_code=401,
+                                headers={"WWW-Authenticate": 'Basic realm="ClipRush AI"'})
+        return await call_next(request)
+
+app.add_middleware(SharedAccessMiddleware)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
                    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.mount("/clips", StaticFiles(directory=str(OUTPUT_DIR)), name="clips")
@@ -21,7 +51,10 @@ VIDEOS = {}
 JOBS = {}
 
 @app.get("/")
-def root(): return {"app": "ClipRush AI", "version": "0.3.0", "docs": "/docs"}
+def root():
+    index = Path(__file__).resolve().parent.parent / "frontend" / "dist" / "index.html"
+    if index.exists(): return FileResponse(index)
+    return {"app": "ClipRush AI", "version": "1.0.0", "docs": "/docs"}
 
 @app.get("/health")
 def health():
@@ -148,3 +181,9 @@ def delete_video(video_id: str):
     Path(record["path"]).unlink(missing_ok=True)
     for clip in record.get("clips", []): (OUTPUT_DIR / clip["filename"]).unlink(missing_ok=True)
     return {"deleted": video_id}
+
+
+# Serve the compiled React app from the same origin so Basic Auth also protects clip files.
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
