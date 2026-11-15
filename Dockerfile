@@ -22,4 +22,4 @@ COPY app/ ./app/
 COPY --from=frontend-build /frontend/dist ./frontend/dist/
 RUN mkdir -p /tmp/cliprush-data/uploads /tmp/cliprush-data/clips
 EXPOSE 10000
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["python", "-u", "-m", "app.run"]
