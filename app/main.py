@@ -20,30 +20,6 @@ from .groq_ai import transcribe_video, select_highlights
 
 app = FastAPI(title="ClipRush AI", description="Password-protected Groq-powered video clipping studio", version="1.0.0")
 
-class SharedAccessMiddleware(BaseHTTPMiddleware):
-    """Single-owner staging gate. Use a unique username/password in deployment secrets."""
-    async def dispatch(self, request: Request, call_next):
-        if request.url.path == "/health":
-            return await call_next(request)
-        username = os.getenv("CLIPRUSH_AUTH_USERNAME", "").strip()
-        password = os.getenv("CLIPRUSH_AUTH_PASSWORD", "")
-        if not username or not password:
-            return JSONResponse({"detail": "Deployment access credentials are not configured."}, status_code=503)
-        header = request.headers.get("authorization", "")
-        try:
-            scheme, encoded = header.split(" ", 1)
-            if scheme.lower() != "basic": raise ValueError("Unsupported auth scheme")
-            supplied = base64.b64decode(encoded, validate=True).decode("utf-8")
-            supplied_user, supplied_password = supplied.split(":", 1)
-        except (ValueError, UnicodeDecodeError, binascii.Error):
-            supplied_user, supplied_password = "", ""
-        valid = secrets.compare_digest(supplied_user, username) and secrets.compare_digest(supplied_password, password)
-        if not valid:
-            return JSONResponse({"detail": "Authentication required."}, status_code=401,
-                                headers={"WWW-Authenticate": 'Basic realm="ClipRush AI"'})
-        return await call_next(request)
-
-app.add_middleware(SharedAccessMiddleware)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
                    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.mount("/clips", StaticFiles(directory=str(OUTPUT_DIR)), name="clips")
