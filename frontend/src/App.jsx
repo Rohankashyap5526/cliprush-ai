@@ -274,7 +274,19 @@ function App() {
 
           {error && <div className="error-banner"><X size={16}/><span>{error}</span><button onClick={() => setError("")}><X size={15}/></button></div>}
           {toast && <div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
-          <footer className="footer"><span>© 2026 ClipRush AI</span><span>Built for creators, one clip at a time.</span><span className="footer-version">MVP · v0.2</span></footer>
+          <footer className="footer">
+            <span>© 2026 ClipRush AI</span>
+            <nav className="footer-guides" aria-label="Creator guides">
+              <a href="/blog/">Creator Guides</a>
+              <a href="/gta-clipping/">GTA Clipping</a>
+              <a href="/ai-video-clip-generator/">AI Clip Generator</a>
+              <a href="/youtube-shorts-generator/">YouTube Shorts</a>
+              <a href="/podcast-clip-maker/">Podcast Clips</a>
+              <a href="/long-video-to-short-clips/">Long to Short</a>
+              <a href="/ai-video-highlights/">AI Highlights</a>
+            </nav>
+            <span className="footer-version">MVP · v0.2</span>
+          </footer>
         </div>
       </main>
     </div>
