@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://cliprush-ai.onrender.com/</loc>
-  </url>
+  <url><loc>https://cliprush-ai.onrender.com/</loc></url>
+  <url><loc>https://cliprush-ai.onrender.com/ai-video-clip-generator/</loc></url>
+  <url><loc>https://cliprush-ai.onrender.com/youtube-shorts-generator/</loc></url>
+  <url><loc>https://cliprush-ai.onrender.com/podcast-clip-maker/</loc></url>
+  <url><loc>https://cliprush-ai.onrender.com/long-video-to-short-clips/</loc></url>
+  <url><loc>https://cliprush-ai.onrender.com/ai-video-highlights/</loc></url>
 </urlset>
