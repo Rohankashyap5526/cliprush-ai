@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://cliprush-ai.onrender.com/sitemap.xml
