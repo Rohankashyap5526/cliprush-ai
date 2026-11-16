@@ -188,11 +188,11 @@ function App() {
         <div className="page-content">
           {active === "Overview" && <section>
             <div className="welcome-row">
-              <div><div className="eyebrow"><Sparkles size={14}/> YOUR AI CREATOR WORKSPACE</div><h1>Turn long videos into <span>short-form gold.</span></h1><p className="subheading">Find standout moments, shape them into clips, and get them ready to share.</p></div>
+              <div><div className="eyebrow"><Sparkles size={14}/> YOUR AI CREATOR WORKSPACE</div><h1>AI video clip generator for <span>short-form content.</span></h1><p className="subheading">Turn long videos, podcasts and streams into engaging YouTube Shorts, Instagram Reels and TikTok clips with AI-selected highlights and timed captions.</p></div>
               <button className="primary-btn" onClick={() => setActive("Create clips")}><Plus size={17}/> Create new clips</button>
             </div>
             <div className="hero-card">
-              <div className="hero-copy"><div className="hero-pill"><WandSparkles size={14}/> CLIPRUSH AI STUDIO</div><h2>One video.<br/><span>Multiple moments.</span></h2><p>Upload or import a video and let Groq find standout moments, add timed captions, and export share-ready clips.</p><button className="hero-btn" onClick={() => setActive("Create clips")}>Start creating <ArrowRight size={16}/></button></div>
+              <div className="hero-copy"><div className="hero-pill"><WandSparkles size={14}/> CLIPRUSH AI STUDIO</div><h2>Long videos.<br/><span>Share-ready short clips.</span></h2><p>Upload or import a video. ClipRush AI transcribes speech, identifies engaging moments, adds timed captions and helps you create short-form videos for social media.</p><button className="hero-btn" onClick={() => setActive("Create clips")}>Start creating <ArrowRight size={16}/></button></div>
               <div className="hero-art">
                 <div className="orb orb-one"/><div className="orb orb-two"/>
                 <div className="video-stack stack-back"><div className="stack-bar"/><div className="stack-lines"/></div>
