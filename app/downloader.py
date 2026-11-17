@@ -8,6 +8,10 @@ from .config import MAX_UPLOAD_MB
 
 ALLOWED = {"youtube.com", "youtu.be", "twitch.tv", "kick.com"}
 
+# Explicitly configure the runtime and solver scripts in the Render container.
+YT_DLP_YOUTUBE_ARGS = ["--js-runtimes", "deno:/usr/local/bin/deno",
+                       "--remote-components", "ejs:github"]
+
 def validate_video_url(url: str):
     try:
         parsed = urlparse((url or "").strip())
@@ -23,14 +27,14 @@ def validate_video_url(url: str):
 def inspect_url(url: str):
     url = validate_video_url(url)
     try:
-        p = subprocess.run(["yt-dlp", "--no-warnings", "--no-playlist", "--dump-single-json", "--skip-download", url],
-                           capture_output=True, text=True, timeout=45)
+        p = subprocess.run(["yt-dlp", *YT_DLP_YOUTUBE_ARGS, "--no-playlist", "--dump-single-json", "--skip-download", url],
+                           capture_output=True, text=True, timeout=60)
     except FileNotFoundError as exc:
-        raise RuntimeError("yt-dlp is not installed. Install dependencies and restart ClipRush.") from exc
+        raise RuntimeError("yt-dlp or the configured Deno runtime is not installed. Rebuild ClipRush.") from exc
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("The video platform took too long to respond. Try again in a moment.") from exc
     if p.returncode:
-        raise RuntimeError(p.stderr[-900:] or "The source could not be inspected.")
+        raise RuntimeError(p.stderr[-1400:] or "The source could not be inspected.")
     try:
         info = json.loads(p.stdout)
     except json.JSONDecodeError as exc:
@@ -58,21 +62,21 @@ def download_video(url: str, destination: Path):
     destination.parent.mkdir(parents=True, exist_ok=True)
     template = str(destination.with_suffix(".%(ext)s"))
     try:
-        p = subprocess.run(["yt-dlp", "--no-warnings", "--no-playlist", "--no-progress",
+        p = subprocess.run(["yt-dlp", *YT_DLP_YOUTUBE_ARGS, "--no-playlist", "--no-progress",
                             "--no-write-thumbnail", "--no-write-info-json", "--no-write-subs", "--no-write-auto-subs",
                             "--no-part", "--force-ipv4", "--extractor-retries", "3", "--fragment-retries", "3",
                             "--retry-sleep", "fragment:2", "-f",
                             "bv*[height<=1080]+ba/b[height<=1080]", "--merge-output-format", "mkv",
-                            "--max-filesize", f"{MAX_UPLOAD_MB}M", "-o", template, url], capture_output=True, text=True, timeout=3600)
+                            "--max-filesize", f"{MAX_UPLOAD_MB}M", "-o", template, url],
+                           capture_output=True, text=True, timeout=3600)
     except FileNotFoundError as exc:
-        raise RuntimeError("yt-dlp is not installed. Install dependencies and restart ClipRush.") from exc
+        raise RuntimeError("yt-dlp or the configured Deno runtime is not installed. Rebuild ClipRush.") from exc
     if p.returncode:
-        detail = p.stderr[-1200:] or "No downloadable media was returned."
+        detail = p.stderr[-1400:] or "No downloadable media was returned."
         if "403" in detail or "Forbidden" in detail:
             raise RuntimeError(
                 "The video platform/CDN returned HTTP 403 and refused the media download. "
-                "Update yt-dlp (py -m pip install -U yt-dlp), retry later, or upload the video file directly. "
-                "Some public URLs cannot be downloaded by the server; ClipRush does not bypass platform access controls. "
+                "Retry later or upload the video file directly. ClipRush does not bypass platform access controls. "
                 + detail
             )
         raise RuntimeError("Source download failed: " + detail)
@@ -84,7 +88,7 @@ def download_video(url: str, destination: Path):
             item.unlink(missing_ok=True)
         raise RuntimeError(
             "yt-dlp did not produce a playable video stream (it may have returned an audio-only or thumbnail file). "
-            "Update yt-dlp and retry, or upload a local MP4/MOV/WebM video."
+            "Retry, or upload a local MP4/MOV/WebM video."
         )
     final = destination.with_suffix(video_outputs[0].suffix.lower())
     if video_outputs[0] != final:
