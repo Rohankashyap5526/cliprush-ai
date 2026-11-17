@@ -15,7 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 # Deno is required by yt-dlp's EJS challenge solver for full YouTube support.
 # fonts-liberation: caption/hook font.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-liberation fontconfig curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-liberation fontconfig curl unzip \
     && DENO_INSTALL=/usr/local sh -c 'curl -fsSL https://deno.land/install.sh | sh' \
     && deno --version \
     && fc-cache -f \
