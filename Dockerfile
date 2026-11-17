@@ -20,6 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certi
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir --pre --upgrade "yt-dlp[default]"
 COPY app/ ./app/
 COPY --from=frontend-build /frontend/dist ./frontend/dist/
 RUN useradd --create-home --uid 10001 cliprush \
