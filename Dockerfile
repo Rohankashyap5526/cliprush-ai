@@ -13,13 +13,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=10000 \
     CLIPRUSH_DATA_DIR=/tmp/cliprush-data
 WORKDIR /app
-# fonts-liberation: caption/hook font (without any font, burned-in captions can silently fail on slim images)
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-liberation fontconfig \
+# Deno is required by yt-dlp's EJS challenge solver for full YouTube support.
+# fonts-liberation: caption/hook font.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-liberation fontconfig curl \
+    && DENO_INSTALL=/usr/local sh -c 'curl -fsSL https://deno.land/install.sh | sh' \
+    && deno --version \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt ./
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir --pre --upgrade "yt-dlp[default]"
