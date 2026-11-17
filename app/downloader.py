@@ -4,6 +4,8 @@ from urllib.parse import urlparse
 import subprocess
 import json
 
+from .config import MAX_UPLOAD_MB
+
 ALLOWED = {"youtube.com", "youtu.be", "twitch.tv", "kick.com"}
 
 def validate_video_url(url: str):
@@ -25,11 +27,18 @@ def inspect_url(url: str):
                            capture_output=True, text=True, timeout=45)
     except FileNotFoundError as exc:
         raise RuntimeError("yt-dlp is not installed. Install dependencies and restart ClipRush.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("The video platform took too long to respond. Try again in a moment.") from exc
     if p.returncode:
         raise RuntimeError(p.stderr[-900:] or "The source could not be inspected.")
-    info = json.loads(p.stdout)
+    try:
+        info = json.loads(p.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("The video platform returned unreadable metadata.") from exc
     if info.get("_type") in {"playlist", "multi_video"}:
         raise ValueError("Please paste a single video or VOD URL, not a channel or playlist.")
+    if info.get("is_live"):
+        raise ValueError("This stream is still live. Import it after it has ended and the VOD is available.")
     return {"title": info.get("title") or "Untitled video", "uploader": info.get("uploader") or info.get("channel") or "",
             "duration": float(info.get("duration") or 0), "thumbnail": info.get("thumbnail") or "",
             "provider": urlparse(url).hostname, "url": url}
@@ -54,7 +63,7 @@ def download_video(url: str, destination: Path):
                             "--no-part", "--force-ipv4", "--extractor-retries", "3", "--fragment-retries", "3",
                             "--retry-sleep", "fragment:2", "-f",
                             "bv*[height<=1080]+ba/b[height<=1080]", "--merge-output-format", "mkv",
-                            "--max-filesize", "1G", "-o", template, url], capture_output=True, text=True, timeout=3600)
+                            "--max-filesize", f"{MAX_UPLOAD_MB}M", "-o", template, url], capture_output=True, text=True, timeout=3600)
     except FileNotFoundError as exc:
         raise RuntimeError("yt-dlp is not installed. Install dependencies and restart ClipRush.") from exc
     if p.returncode:

@@ -4,13 +4,17 @@ A password-protected, single-instance deployment of the ClipRush AI video clippi
 
 ## Features
 
-- Upload MP4, MOV, MKV, WebM, AVI and M4V video files
-- Inspect supported public video URLs and import sources when the provider permits access
-- Transcribe audio with Groq Whisper (`whisper-large-v3-turbo` by default)
-- Select candidate highlights with Groq (`openai/gpt-oss-120b` by default)
-- Render captioned 9:16, 1:1 and 16:9 MP4 clips with FFmpeg
-- React dashboard served by FastAPI from the same origin
-- HTTP Basic Authentication for the dashboard, API, documentation and generated clips
+- Upload MP4, MOV, MKV, WebM, AVI and M4V files (with a real progress bar), or import a YouTube/Twitch/Kick link as a background job
+- One-click **presets** (Shorts/Reels/TikTok, Podcast, Gaming, YouTube) plus fine-grained options
+- Transcribe with Groq Whisper (`whisper-large-v3-turbo` by default), with an optional spoken-language hint
+- AI highlight selection (`openai/gpt-oss-120b` by default) with a 0-100 score, an on-screen hook, a social description and hashtags for every clip
+- Clips start and end on real word boundaries, and long videos are analysed in full, not just the first part
+- Captions in four styles including **word-by-word highlight**, optional hook title, caption position, and **blurred-background fit** for widescreen footage
+- 9:16, 1:1 and 16:9 output at 720p or 1080p, H.264/`yuv420p` so clips play everywhere
+- Library that survives restarts, per-clip delete, copy-caption, `.srt` download and **Download all as ZIP**
+- Reuses the saved transcript when you generate again, so you don't pay for transcription twice
+- HTTP Basic Authentication for the dashboard, API, documentation and generated clips (fails closed if credentials are missing)
+- Automatic cleanup of old projects (`CLIPRUSH_RETENTION_HOURS`)
 
 Only process videos you own or have permission to use. Source URL imports are best-effort and do not bypass logins, DRM, paywalls, or provider restrictions.
 
@@ -29,9 +33,9 @@ Do not commit `.env` or put the Groq key in a `VITE_*` variable. The API key bel
 
 ### Render free-plan limitations
 
-The supplied Blueprint uses Render's free web-service plan to keep initial hosting cost at zero. Free instances can sleep and their local filesystem is ephemeral. Uploaded videos, generated clips, in-memory job state and video records can be lost when the service restarts, redeploys or sleeps. The app is therefore suitable for a protected demo/test deployment, not durable production storage. For reliable production use, add a persistent disk or object storage, a database and a durable background worker; these may incur charges.
+The supplied Blueprint uses Render's free web-service plan to keep initial hosting cost at zero. Free instances can sleep and their local filesystem is ephemeral. Uploaded videos, generated clips and the project registry (`state.json`) can be lost when the service restarts, redeploys or sleeps unless `CLIPRUSH_DATA_DIR` points at a persistent disk. The app is therefore suitable for a protected demo/test deployment, not durable production storage. For reliable production use, add a persistent disk or object storage, a database and a durable background worker; these may incur charges.
 
-The app currently uses one shared Basic Auth login, one process-local registry and in-process background tasks. It is not a multi-user SaaS: users sharing the login also share the same service instance and its files. Do not distribute the shared credentials publicly. For public launch, implement individual accounts, per-user authorization, rate limits/quotas, durable job processing, persistent storage, monitoring and abuse controls first.
+The app currently uses one shared Basic Auth login, one JSON-file registry and in-process background workers. It is not a multi-user SaaS: users sharing the login also share the same service instance and its files. Do not distribute the shared credentials publicly. For public launch, implement individual accounts, per-user authorization, rate limits/quotas, durable job processing, persistent storage, monitoring and abuse controls first.
 
 ## Local development
 
@@ -48,12 +52,12 @@ The app currently uses one shared Basic Auth login, one process-local registry a
 python -m venv .venv
 # Windows: .venv\\Scripts\\activate
 # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-Set `GROQ_API_KEY`, `CLIPRUSH_AUTH_USERNAME` and `CLIPRUSH_AUTH_PASSWORD` in `.env`. The frontend dev server runs on a different origin, so local browser calls to the protected backend may trigger the browser's Basic Auth prompt.
+Set `GROQ_API_KEY`, `CLIPRUSH_AUTH_USERNAME` and `CLIPRUSH_AUTH_PASSWORD` in `.env`. For purely local use you can instead set `CLIPRUSH_DISABLE_AUTH=1` to skip the login prompt (never on a public server). The frontend dev server runs on a different origin, so local browser calls to the protected backend may trigger the browser's Basic Auth prompt.
 
 ### Frontend
 
@@ -76,29 +80,42 @@ For local Vite development, set `VITE_API_BASE=http://127.0.0.1:8000` in `fronte
 | `GROQ_CHAT_MODEL` | No | Defaults to `openai/gpt-oss-120b` |
 | `GROQ_STT_MODEL` | No | Defaults to `whisper-large-v3-turbo` |
 | `CLIPRUSH_MAX_UPLOAD_MB` | No | Defaults to 1024 locally; Blueprint sets 500 |
-| `CLIPRUSH_DATA_DIR` | No | Writable upload/output directory |
+| `CLIPRUSH_DATA_DIR` | No | Writable upload/output/state directory |
+| `CLIPRUSH_RETENTION_HOURS` | No | Auto-delete projects older than this (default 24, `0` = keep) |
+| `CLIPRUSH_MAX_CONCURRENT_JOBS` | No | Parallel clip jobs (default 1; keep low on small servers) |
+| `CLIPRUSH_DISABLE_AUTH` | No | `1` disables Basic Auth. Local development only |
 | `PORT` | No | Render supplies this; Docker defaults to 10000 |
 
 ## API
 
-- `GET /health` — unauthenticated health check
+- `GET /health` — unauthenticated health/config check (no secrets)
 - `POST /api/videos` — upload a video
-- `GET /api/videos` — list videos in the current process
-- `POST /api/videos/{video_id}/analyze` — start clip generation
-- `GET /api/jobs/{job_id}` — inspect in-process job status
-- `DELETE /api/videos/{video_id}` — delete source and generated clips
+- `GET /api/videos`, `GET /api/videos/{id}` — projects and their clips
+- `POST /api/videos/{id}/analyze` — start clip generation (returns a `job_id`)
+- `GET /api/jobs/{job_id}` — job status/progress
+- `DELETE /api/videos/{id}` — delete a project and all its files
+- `DELETE /api/videos/{id}/clips/{clip_id}` — delete one clip
+- `GET /api/videos/{id}/clips.zip` — download every clip (+ subtitles)
 - `POST /api/sources/inspect` — inspect a supported source URL
-- `POST /api/sources/download` — best-effort import where permitted
-- `GET /clips/{filename}` — serve generated clips (authentication required)
+- `POST /api/sources/download` — import a source in the background (returns a `job_id`)
+- `GET /clips/{filename}` — generated clips and `.srt` files (authentication required)
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt && python -m pytest -q   # backend, incl. real FFmpeg renders
+cd frontend && npm test                                       # UI
+```
 
 ## Current limitations
 
 - No individual user accounts, billing, persistent database, object storage or durable queue.
-- Jobs and video metadata live in process memory; restart loses the registry.
+- The registry is a JSON file, and jobs running during a restart are marked failed (re-run them).
 - Render free filesystem is ephemeral; files are not durable.
 - The shared Basic Auth gate is for a private demo, not a public multi-tenant product.
 - Clip selection quality depends on speech/transcript quality and model output; results are not guaranteed to be viral or factually perfect.
-- Center crop is used for vertical output; face tracking and intelligent subject reframing are not included.
+- Vertical output uses a centre crop or a blurred-background fit; face tracking / subject-aware reframing is not included.
+- YouTube sometimes blocks server-side downloads; if an import fails, upload the file instead.
 
 ## Troubleshooting
 
